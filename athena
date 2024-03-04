@@ -318,9 +318,10 @@ def _extract_row_data(result):
         row_values = []
         for value in row['Data']:
             if 'VarCharValue' in value:
-                row_data.append(value)
+                row_values.append(value['VarCharValue'])
             else:
-                row_data.append("")
+                row_values.append(None)  # or any default value you want to use for blank columns
+        row_data.append(row_values)
     return row_data
 
 
@@ -414,37 +415,39 @@ def _run(config_file, arg_parameters, args):
 
     for query in queries:
         results = _query_athena(config_file, query)
-        if args.csv:
-            rows = _extract_row_data(results)
+        log.info(results)
+        if results:
+            if args.csv:
+                rows = _extract_row_data(results)
 
-            for row in rows:
-                try:
-                    values = [data['VarCharValue'] for data in row['Data']]
-                    if args.csv:
-                        print(",".join([val for val in values]))
-                    else:
-                        print(",".join(["".format(val) for val in values]))
-                except KeyError:
-                    print('keyerror')
-                    pass
-        else:
-            headers = [col['Label'] for col in results['ResultSet']['ResultSetMetadata']['ColumnInfo']]
-            rows = _extract_row_data(results)
+                for row in rows:
+                    try:
+                        values = [data['VarCharValue'] for data in row['Data']]
+                        if args.csv:
+                            print(",".join([val for val in values]))
+                        else:
+                            print(",".join(["".format(val) for val in values]))
+                    except KeyError:
+                        print('keyerror')
+                        pass
+            else:
+                headers = [col['Label'] for col in results['ResultSet']['ResultSetMetadata']['ColumnInfo']]
+                rows = _extract_row_data(results)
 
-            table = Table(title=query['name'])
-            row_styles = [Style(color="cyan"), Style(color="magenta"), Style(color="yellow")]
+                table = Table(title=query['name'])
+                row_styles = [Style(color="cyan"), Style(color="magenta"), Style(color="yellow")]
 
-            for column in headers:
-                table.add_column(column)
+                for column in headers:
+                    table.add_column(column)
 
-            for i, row in enumerate(rows):
-                row_style = row_styles[i % len(row_styles)]
-                table.add_row(*row, style=row_style)
+                for i, row in enumerate(rows):
+                    row_style = row_styles[i % len(row_styles)]
+                    table.add_row(*row, style=row_style)
 
-            console = Console()
-            console.print(table)
+                console = Console()
+                console.print(table)
 
-        print("")
+            print("")
 
 
 if __name__ == '__main__':
