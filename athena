@@ -315,7 +315,12 @@ def _extract_row_data(result):
     rows = result['ResultSet']['Rows']
     row_data = []
     for row in rows[1:]:  # Skip the first row as it contains column names
-        row_data.append([value['VarCharValue'] for value in row['Data']])
+        row_values = []
+        for value in row['Data']:
+            if 'VarCharValue' in value:
+                row_data.append(value)
+            else:
+                row_data.append("")
     return row_data
 
 
@@ -410,12 +415,18 @@ def _run(config_file, arg_parameters, args):
     for query in queries:
         results = _query_athena(config_file, query)
         if args.csv:
-            for row in results['ResultSet']['Rows']:
-                values = [data['VarCharValue'] for data in row['Data']]
-                if args.csv:
-                    print(",".join([val for val in values]))
-                else:
-                    print(",".join(["".format(val) for val in values]))
+            rows = _extract_row_data(results)
+
+            for row in rows:
+                try:
+                    values = [data['VarCharValue'] for data in row['Data']]
+                    if args.csv:
+                        print(",".join([val for val in values]))
+                    else:
+                        print(",".join(["".format(val) for val in values]))
+                except KeyError:
+                    print('keyerror')
+                    pass
         else:
             headers = [col['Label'] for col in results['ResultSet']['ResultSetMetadata']['ColumnInfo']]
             rows = _extract_row_data(results)
@@ -430,8 +441,8 @@ def _run(config_file, arg_parameters, args):
                 row_style = row_styles[i % len(row_styles)]
                 table.add_row(*row, style=row_style)
 
-        console = Console()
-        console.print(table)
+            console = Console()
+            console.print(table)
 
         print("")
 
