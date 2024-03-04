@@ -1,0 +1,58 @@
+{
+    "config": [
+        {
+            "name": "default_database",
+            "value": "default"
+        },
+        {
+            "name": "s3_bucket",
+            "value": "s3://my-athena-results-bucket/"
+        }
+    ],
+    "parameters": [
+        {
+            "name": "year",
+            "value": "and year = '{year}'"
+        },
+        {
+            "name": "month",
+            "value": "and month = '{month}'"
+        },
+        {
+            "name": "limit",
+            "value": "limit {limit}"
+        }
+    ],
+    "values": [
+        {
+            "name": "cost_report_table",
+            "value": "cost_report"
+        },
+        {
+            "name": "aws_account_id",
+            "value": "0000111112223"
+        }
+    ],
+    "queries": [
+        {
+            "name": "default",
+            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month FROM {cost_report_table} WHERE 1 = 1 {year} {and} {or} {test} GROUP BY  year, month HAVING SUM(line_item_blended_cost) > 0 ORDER BY  cost DESC {limit};"
+        },
+        {
+            "name": "backup",
+            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month, line_item_usage_account_id, line_item_resource_id FROM {cost_report_table} WHERE 1 = 1 {year} {month} AND line_item_product_code = 'AmazonRDS' AND line_item_usage_type like '%Backup%' GROUP BY  year, month, line_item_usage_account_id, line_item_usage_type, line_item_product_code, line_item_resource_id HAVING SUM(line_item_blended_cost) > 0 ORDER BY  month, cost desc {limit};"
+        },
+        {
+            "name": "service",
+            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month, line_item_product_code FROM {cost_report_table} WHERE 1 = 1 {year} {month} {and} {or} {like} GROUP BY year, month, line_item_product_code HAVING SUM(line_item_blended_cost) > 0 ORDER BY cost DESC, month DESC, line_item_product_code DESC {limit};"
+        },
+        {
+            "name": "account",
+            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, line_item_usage_account_id FROM {cost_report_table} WHERE 1 = 1 {year} {month} {and} {or} GROUP BY year, month, line_item_usage_account_id ORDER BY cost DESC, month DESC {limit};"
+        },
+        {
+            "name": "iops",
+            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, line_item_line_item_type, line_item_product_code, line_item_usage_type, line_item_usage_start_date as start_date {select} FROM {cost_report_table} WHERE 1 = 1 {year} {month} {like} and line_item_product_code = 'AmazonRDS' and line_item_usage_type = 'APS2-Aurora:StorageIOUsage' and line_item_usage_account_id = '{aws_account_id}' and line_item_line_item_type = 'Usage' GROUP BY year, month {group_by} ORDER BY cost DESC, hour desc, year DESC, month DESC, day DESC {order_by} {limit};"
+        }
+    ]
+}    
