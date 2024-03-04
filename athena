@@ -63,7 +63,7 @@ def _add_and_statements(parameters, and_statements):
     for and_param in and_statements:
         key, value = and_param.split('=')
         additional.append(f"AND {key} = '{value}'")
-    parameters.append({"name": "and", "query": ' '.join(additional)})
+    parameters.append({"name": "and", "value": ' '.join(additional)})
     return parameters
 
 
@@ -74,7 +74,7 @@ def _add_or_statements(parameters, or_statements):
     for and_param in or_statements:
         key, value = and_param.split('=')
         additional.append(f"OR {key} = '{value}'")
-    parameters.append({"name": "or", "query": ' '.join(additional)})
+    parameters.append({"name": "or", "value": ' '.join(additional)})
     return parameters
 
 
@@ -85,13 +85,15 @@ def _add_like_statements(parameters, like_statements):
     for and_param in like_statements:
         key, value = and_param.split('=')
         additional.append(f" AND {key} LIKE '%{value}%'")
-    parameters.append({"name": "like", "query": ' '.join(additional)})
+    parameters.append({"name": "like", "value": ' '.join(additional)})
     return parameters
 
 
 def _generate_query_with_parameters(query_obj, parameters):
     query = query_obj['value']
     for param in parameters:
+        print(param)
+        print(query)
         query = query.replace(f"{{{param['name']}}}", param['value'])
     return query
 
