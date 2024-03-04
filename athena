@@ -421,15 +421,7 @@ def _run(config_file, arg_parameters, args):
                 rows = _extract_row_data(results)
 
                 for row in rows:
-                    try:
-                        values = [data['VarCharValue'] for data in row['Data']]
-                        if args.csv:
-                            print(",".join([val for val in values]))
-                        else:
-                            print(",".join(["".format(val) for val in values]))
-                    except KeyError:
-                        print('keyerror')
-                        pass
+                    print(",".join([val for val in row]))
             else:
                 headers = [col['Label'] for col in results['ResultSet']['ResultSetMetadata']['ColumnInfo']]
                 rows = _extract_row_data(results)
