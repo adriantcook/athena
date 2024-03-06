@@ -16,7 +16,7 @@ s3_bucket           - set the s3 bucket name where the results will be recored t
 ### values:
 These are propagated into the parameters and parameters, you can use this to store static values that can be used in your queries and other parameters, this is handy if you keep calling the same static tables / or account_ids etc
 I.e.
-```json
+```
 values: [{
     "name": "my_aws_account_id",
     "value": "1234567890"
@@ -34,7 +34,7 @@ queries: [
 
 ### parameters:
 Parameters can be used for static values or queries
-```json
+```
 parameters: [{
     "name": "aws_account_id",
     "value": "{my_aws_account_id}"
@@ -50,7 +50,7 @@ Write your stored queries here, you can then just call them by passing the name 
 $ athena -q 
 ```
 
-```json
+```bash
 queries [
         {
             "name": "default",
@@ -67,7 +67,7 @@ queries [
 ## Stored parameters
 
 The following stored parameters are used by the `athena` script as stored functions and will be called by the script, these be amended to the queries once added:
-```json
+```bash
 {and}       - Additional AND statements
 {or}        - Additional OR statements
 {like}      - Additional LIKE statements
@@ -89,4 +89,55 @@ $ athena -a my_account_id=12334234,my_column=value2 -o my_column=value3 -L 10
 ```
 
 # Examples:
+#### AND_STATEMENTS:
+##### config
+```bash
+{
+    "queries": [
+        "name": "my_query",
+        "value": "SELECT * FROM <TABLE> WHERE 1 = 1 {and}; "
+    ]  
+}
+```
+
+##### execution
+```bash
+$ athena -q <QUERY> -a <KEY>=<VALUE>
+```
+
+#### OR_STATEMENTS:
+##### config
+```bash
+{
+    "queries": [
+        "name": "my_query",
+        "value": "SELECT * FROM <TABLE> WHERE 1 = 1 {or}; "
+    ]  
+}
+```
+
+##### execution
+```bash
+$ athena -q <QUERY> -o <KEY>=<VALUE>
+```
+
+#### LIKE_STATEMENTS:
+##### config
+```bash
+{
+    "queries": [
+        "name": "my_query",
+        "value": "SELECT * FROM <TABLE> WHERE 1 = 1 {like}; "
+    ]  
+}
+```
+
+##### execution
+```bash
+$ athena -q <QUERY> -l <KEY>=<VALUE>
+```
+
+
+# Demo
+![Example](./docs/athena_demo.gif)
 
