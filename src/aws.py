@@ -5,7 +5,7 @@ from botocore.exceptions import UnauthorizedSSOTokenError, \
     ClientError, NoCredentialsError
 
 log.basicConfig(
-    level=log.DEBUG, 
+    level=log.DEBUG,
     stream=sys.stdout,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -13,6 +13,7 @@ log.basicConfig(
 class Aws:
     def __init__(self):
         self.session = None
+        self.account_id = None
 
 
     def aws_account_id(self):

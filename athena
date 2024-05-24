@@ -115,7 +115,6 @@ def run_query(config, args, **options):
     if 'operators' in query:
         log.info("loading operators from file")
         for operator in query['operators']:
-            name = operator['name']
             if isinstance(operator['value'], list):
                 value = operator['value']
             elif isinstance(operator['value'], str):
@@ -156,8 +155,11 @@ def run_query(config, args, **options):
 
     log.info("")
     log.info("final outputs:")
-    log.info(sql_builder.get_statements())
+    log.info("params [%s]", config.get_params())
+    log.info("sql statements [%s]", sql_builder.get_statements())
+    sql_builder.add_statements_dict(config.get_params())
     query = sql_builder.update_sql_statement(query)
+    query = sql_builder.remove_unused_parameters(query)
     log.info(query['value'])
 
     response = athena.query(s3_bucket, database, query)

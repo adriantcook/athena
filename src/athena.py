@@ -1,7 +1,6 @@
 __doc__ = '''
 Athena class for querying athena database
 '''
-import re
 import sys
 import logging as log
 import boto3

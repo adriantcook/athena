@@ -22,7 +22,8 @@ class Config:
         return self.raw_config
 
 
-    def _load_config_file(self):
+    @staticmethod
+    def _load_config_file():
         script_path = os.path.abspath(__file__)
         script_dir = os.path.dirname(script_path)
         path_components = script_dir.split(os.path.sep)
@@ -32,7 +33,7 @@ class Config:
         base_path = os.path.sep.join(path_components)
         path = os.path.join(base_path, 'athena.json')
 
-        log.info(f"loading config file [{path}]")
+        log.info("loading config file [%s]", path)
         try:
             with open(path, 'r', encoding='utf-8') as file:
                 return json.load(file)
@@ -46,9 +47,9 @@ class Config:
         def replace_placeholders(value, params):
             if isinstance(value, str):
                 return re.sub(r'\{(.*?)\}', lambda m: params.get(m.group(1), m.group(0)), value)
-            elif isinstance(value, dict):
+            if isinstance(value, dict):
                 return {k: replace_placeholders(v, params) for k, v in value.items()}
-            elif isinstance(value, list):
+            if isinstance(value, list):
                 return [replace_placeholders(elem, params) for elem in value]
             return value
         self.config = replace_placeholders(self.raw_config, params)
@@ -64,13 +65,13 @@ class Config:
         self.update_config_values()
         return self.params
 
-    
+
     def add_params_dict(self, params_dict):
         for key, value in params_dict.items():
             self.params[key] = value
         self.update_config_values()
 
-    
+
     def add_params_arr(self, params_arr):
         for param in params_arr:
             key, value = param.split('=')
@@ -107,11 +108,11 @@ class Config:
             query_names.append(query['name'])
         return query_names
 
-    
+
     def get_params(self):
         return self.params
 
-    
+
     def set_default_config_params(self):
         config = self.get_config()
         if 'parameters' not in config:
@@ -125,8 +126,12 @@ class Config:
 
         self.params.update(file_params_dict)
 
+        log.info("params from config file:")
+        log.info(self.params)
 
-    def set_query_obj_params(self, query_obj):
+
+    @staticmethod
+    def set_query_obj_params(query_obj):
         return query_obj
 
 
@@ -136,14 +141,13 @@ class Config:
         if colors_config:
             colors = colors_config['colors']
             return colors
-        else:
-            log.info("No colors found, using defaults.")
-            return ["cyan", "magenta", "yellow"]
+        log.info("No colors found, using defaults.")
+        return ["cyan", "magenta", "yellow"]
 
 
     def get_config_value(self, name):
-        """Will search overrides first for the template, if it does not find anything"""
-        """it will return just the config value it finds"""
+        "Will search overrides first for the template, if it does not find anything" \
+        "it will return just the config value it finds"
         config = self.config
         for cfg in config['config']:
             if 'profile' in cfg:

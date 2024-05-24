@@ -1,6 +1,7 @@
 __doc__ = '''
 Build SQL class for generating SQL Queries 
 '''
+import re
 import sys
 import logging as log
 
@@ -14,7 +15,6 @@ log.basicConfig(
 class SqlBuilder():
     def __init__(self):
         self.statements = []
-        pass
 
 
     def generate_query_operators(self, opper='and', parameters=None, override=False):
@@ -49,7 +49,8 @@ class SqlBuilder():
         self.add_statements([{'name': opper, 'value': params}], override)
 
 
-    def _generate_in(self, value):
+    @staticmethod
+    def _generate_in(value):
         items = value.split(',')
         return " (" + ", ".join(f"'{item.strip()}'" for item in items) + ")"
 
@@ -58,13 +59,28 @@ class SqlBuilder():
         return self.statements
 
 
-    def _value_to_arr(self, value):
-        if type(value) == str:
+    @staticmethod
+    def _value_to_arr(value):
+        if isinstance(value, str):
             return [value]
-        elif type(value) == list:
+        if isinstance(value, list):
             return value
+        return value
 
-    
+
+    @staticmethod
+    def remove_unused_parameters(query_obj):
+        """Remove remaining blank parameters from the query:"""
+        sql = re.sub(r'\{.*?\}', '', query_obj['value'])
+        query_obj['value'] = sql
+        return query_obj
+
+
+    def add_statements_dict(self, new_statements):
+        for key, value in new_statements.items():
+            self.statements.append({'name': key, 'value': [value]})
+
+
     def add_statements(self, new_statements, override=False):
         log.info("add_statements\toverride?[%s][%s]", override, new_statements)
         for new_statement in new_statements:
@@ -82,24 +98,24 @@ class SqlBuilder():
             # Add new statement if not found
             if not statement_found:
                 self.statements.append(new_statement)
-        
+
         return self.statements
 
-    
+
     def update_sql_statement(self, query_obj):
-        sql = query_obj['value'] 
+        sql = query_obj['value']
         for param in self.statements:
             name = param['name']
             value = param['value']
-            
+
             if isinstance(value, list):
                 # Join list items with spaces
                 value = ' '.join(value)
-            
+
             # Replace the placeholder in the SQL query
             placeholder = f'{{{name}}}'
             sql = sql.replace(placeholder, value)
 
         query_obj['value'] = sql
-        
+
         return query_obj

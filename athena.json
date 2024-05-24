@@ -6,7 +6,7 @@
         },
         {
             "name": "s3_bucket",
-            "value": "s3://{bucket}-{aws_account_id}-{region}/"
+            "value": "s3://{root_bucket}-{aws_account_id}-{region}/"
         },
         {
             "colors": ["bright_red", "bright_yellow", "bright_blue"]
@@ -16,7 +16,7 @@
             "region": "ap-southeast-2",
             "values": [
                 {
-                    "s3_bucket": "s3://{mybucket}-{aws_account_id}-{region}/",
+                    "s3_bucket": "s3://{my_environment_bucket}-{aws_account_id}-{region}/",
                     "database": "{profile}_{environment}"
                 }
             ]
@@ -28,16 +28,16 @@
             "value": "test"
         },
         {
-            "name": "mybucket",
-            "value": "myaccountbucket"
-        },        
+            "name": "root_bucket",
+            "value": "my-root-bucket"
+        },
         {
-            "name": "bucket",
-            "value": "myrootbucket"
+            "name": "my_environment_bucket",
+            "value": "buckety-bucket"
         },
         {
             "name": "cost_report_table",
-            "value": "costycostytable"
+            "value": "mycostyreportytable"
         },
         {
             "name": "year",
@@ -95,7 +95,7 @@
         },
         {
             "name": "backup",
-            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month, line_item_usage_account_id, line_item_resource_id FROM {cost_report_table} WHERE 1 = 1 AND line_item_product_code = 'AmazonRDS' AND line_item_usage_type like '%Backup%' AND year = '{year}' AND month = '{month}' {like} GROUP BY  year, month, line_item_usage_account_id, line_item_usage_type, line_item_product_code, line_item_resource_id HAVING SUM(line_item_blended_cost) > 0 ORDER BY  month, cost desc {limit};"
+            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month, line_item_usage_account_id, line_item_resource_id FROM {cost_report_table} WHERE 1 = 1 AND line_item_product_code = 'AmazonRDS' AND line_item_usage_type like '%Backup%' AND year = '{year}' AND month = '{month}' {and} {like} GROUP BY  year, month, line_item_usage_account_id, line_item_usage_type, line_item_product_code, line_item_resource_id HAVING SUM(line_item_blended_cost) > 0 ORDER BY  month, cost desc {limit};"
         },
         {
             "name": "elb",
@@ -104,7 +104,7 @@
         },
         {
             "name": "total",
-            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month FROM {cost_report_table} WHERE 1 = 1 AND year='{year}' {and} {or} GROUP BY year, month ORDER BY cost DESC, month DESC {limit};"
+            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month FROM {cost_report_table} WHERE 1 = 1 {year} {and} {or} GROUP BY year, month ORDER BY cost DESC, month DESC {limit};"
         }
     ]
 }
