@@ -4,325 +4,166 @@ AWS Athena stored query tool
 Make sure you are authenticated with selected AWS profile.
 
 Usage:
-\t-S / --select\tAdd additional SELECT columns, comma-separated i.e. order_id,column2,column3
-\t-G / --group-by\tAdd additional GROUP BY columns, if you do not specify the column names,
+\t-s / --select\tAdd additional SELECT columns, comma-separated i.e. order_id,column2,column3
+\n
+\t-a / --and\tcolumn1=<value1,value2> column2=value\tAdd AND statements to a query
+\t-o / --or\tcolumn1=<value1,value2> column2=value\tAdd OR statements to a query 
+\n
+\tYou can use the following logical operators with and / or (-a / -o):\n
+\t\tcolumn=value\t\t\t- column is EQUAL to
+\t\tcolumn^value\t\t\t- column is NOT EQUAL to
+\t\tcolumn~value\t\t\t- column is LIKE
+\t\tcolumn=value1,value2,value3\t- column is IN ('value1', 'value2', 'value3')
+\n
+\t-p <PARAMETER=VALUE>\tReplace any params with value, i.e. -p table=mytable would replace \
+all {{table}} placeholders wih mytable
+\n
+\t-g / --group-by\tAdd additional GROUP BY columns, if you do not specify the column names,
+\t\t\tit will default to the SELECT column names, separated by comma-separated i.e. order_id,column2,column3\n
+\t-o / --order-by\tcolumn1=asc,column2=desc,column3\n\n\t\t\tAdd additional ORDER BY columns, if you do not specify the column names,
 \t\t\tit will default to the SELECT column names, separated by comma-separated i.e. order_id,column2,column3
-\t-O / --order-by\tAdd additional ORDER BY columns, if you do not specify the column names,
-\t\t\tit will default to the SELECT column names, separated by comma-separated i.e. order_id,column2,column3
+\n
+\t-c\tWill output the results as CSV rather than a table
 
 Examples:
-    \tathena -m 2 -q iops -v -O hour=asc,day=asc
+    \tathena -q default -v -a hour=24,day^30
+
 '''
-
-import os
-import re
 import sys
-import json
 import argparse
-import datetime
 import logging as log
-import boto3
-import botocore
-from rich.console import Console
-from rich.table import Table
-from rich.style import Style
 
-log.basicConfig(level=log.DEBUG, stream=sys.stdout,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+from src.aws import Aws
+from src.config import Config
+from src.athena import Athena
+from src.sql_builder import SqlBuilder
 
-
-def _load_config_file():
-    tmp_path = os.path.dirname(os.path.realpath(__file__)).split(os.path.sep)
-    path = f"{os.path.sep}".join(tmp_path)
-    with open(path + os.path.sep + "athena.json",
-            'r', encoding='utf-8') as file:
-        return json.load(file)
+log.basicConfig(
+        level=log.DEBUG,
+        stream=sys.stdout,
+       format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 
-def _get_queries(config_file, query_args):
-    queries = []
-    log.info("getting queries by name")
-    if query_args is None:
-        query_names = ["default"]
-    else:
-        query_names = query_args.split(",")
+def run_athena(args):
+    """run_athena - main program loop executed by main."""
+    aws = Aws()
+    config = Config()
 
-    for query_blob in config_file['queries']:
-        for query_name in query_names:
-            if query_name == query_blob['name']:
-                log.info("\t%s", query_blob['value'])
-                queries.append(query_blob)
-    return queries
+    # create the aws session and get the system parameters
+    _, params = aws.get_session()
+    config.add_params_dict(params)
 
+    query = {}
+    database = 'default'
 
-def _add_and_statements(parameters, and_statements):
-    if and_statements is None:
-        return parameters
+    if args.query:
+        query = {'value': args.query}
 
-    additional = []
-    for and_param in and_statements:
-        key, value = and_param.split('=')
-        additional.append(f"AND {key} = '{value}'")
-    parameters.append({"name": "and", "value": ' '.join(additional)})
-    return parameters
+    if args.params:
+        config.add_params_arr(args.params)
+        config.update_config_values()
+    config.set_default_config_params()
 
+    if args.query_name:
+        query = config.get_query_by_name(args.query_name)
+        if not query:
+            print("query not found\n")
+            query_names = config.get_all_query_names()
+            for query_name in query_names:
+                print(f"\t{query_name}")
+            sys.exit(0)
 
-def _add_or_statements(parameters, or_statements):
-    if or_statements is None:
-        return parameters
-    additional = []
-    for and_param in or_statements:
-        key, value = and_param.split('=')
-        additional.append(f"OR {key} = '{value}'")
-    parameters.append({"name": "or", "value": ' '.join(additional)})
-    return parameters
+    if 'database' in query:
+        database = query.get('database')
 
+    if args.database:
+        database = args.database
 
-def _add_like_statements(parameters, like_statements):
-    if like_statements is None:
-        return parameters
-    additional = []
-    for and_param in like_statements:
-        key, value = and_param.split('=')
-        additional.append(f" AND {key} LIKE '%{value}%'")
-    parameters.append({"name": "like", "value": ' '.join(additional)})
-    return parameters
+    s3_bucket = config.get_config_value('s3_bucket')
+    params = config.get_params()
+    log.info("using bucket  [%s]", s3_bucket)
+    log.info("using params  [%s]", params)
 
-
-def _generate_query_with_parameters(query_obj, parameters):
-    query = query_obj['value']
-    for param in parameters:
-        query = query.replace(f"{{{param['name']}}}", param['value'])
-    return query
-
-
-def _apply_parameters(parameters, config_file):
-    queries = []
-    log.info("applying parameters")
-    for query_blob in config_file:
-        updated_query = _generate_query_with_parameters(query_blob, parameters)
-        log.info("Updated query %s", updated_query)
-        queries.append({
-            'name': query_blob['name'],
-            'value': updated_query})
-    return queries
-
-
-def _remove_unused_parameters(queries):
-    queries_array = []
-    for query_blob in queries:
-        # Remove remaining blank parameters from the query:
-        query = re.sub(r'\{.*?\}', '', query_blob['value'])
-        queries_array.append({
-            'name': query_blob['name'],
-            'value': query,
-            })
-    return queries_array
-
-
-def _has_group_by(sql_statement):
-    # Regular expression to search for the GROUP BY keyword
-    pattern = r'\bGROUP\s+BY\b'
-    match = re.search(pattern, sql_statement, re.IGNORECASE)
-    return bool(match)
-
-
-def _has_order_by(sql_statement):
-    # Regular expression to search for the ORDER BY keyword
-    pattern = r'\bORDER\s+BY\b'
-    match = re.search(pattern, sql_statement, re.IGNORECASE)
-    return bool(match)
-
-
-def _add_additional_select(queries, select_values):
-    if select_values is None:
-        return queries
-    query_arr = []
-    select_statement = {
-            'name': 'select',
-            'value': f', {select_values}'
-    }
-    log.info("_add_additional_select")
-    log.info(select_statement)
-    for query_blob in queries:
-        query = _generate_query_with_parameters(query_blob, [select_statement])
-        query_arr.append({'name': query_blob['name'], 'value': query})
-    return query_arr
-
-
-def _add_additional_group_by(queries, select_values, group_by_values):
-    if group_by_values is None:
-        return queries
-
-    if group_by_values == 'arg_was_not_given':
-        log.info('group_by was not set, but group by flag was passed, using select values')
-        log.info('\tselect_values - %s', select_values)
-        group_by_values = select_values
-
-    for query_blob in queries:
-        group_by_query = ""
-        if _has_group_by(query_blob['value']):
-            # Don't need to add group by
-            group_by_query = f", {group_by_values}"
-        else:
-            # Add group by
-            group_by_query = f" GROUP BY {group_by_values}"
-        query = _generate_query_with_parameters(query_blob, [{'name': 'group_by',
-            'value': group_by_query}])
-        query_blob['value'] = query
-    return queries
-
-
-def _add_additional_order_by(queries, select_values, order_by_values):
-    if order_by_values is None:
-        return queries
-
-    if order_by_values == 'arg_was_not_given':
-        log.info('group_by was not set, but group by flag was passed, using select values')
-        log.info('\tselect_values - %s', select_values)
-        order_by_values = select_values
-
-    order_arr = []
-    # See if order by has a key value pair
-    for order in order_by_values.split(','):
-        order_direction = ''
-        if order.find('=') != -1:
-            key, value = order.split('=')
-            order_direction = f'{key} {value}'
-        else:
-            order_direction = f'{order}'
-        order_arr.append(order_direction)
-
-    order_by_query = ','.join(order_arr)
-    log.info('order by string %s', order_arr)
-
-    for query_blob in queries:
-        if _has_order_by(query_blob['value']):
-            # Don't need to add order by
-            order_by_query = f", {order_by_query}"
-        else:
-            # Add order by
-            order_by_query = f" ORDER BY {order_by_query}"
-        query = _generate_query_with_parameters(query_blob, [{'name': 'order_by',
-            'value': order_by_query}])
-        query_blob['value'] = query
-    return queries
-
-
-def _apply_local_parameters(arg_parameters, parameter_blob):
-    tmp_parameters = []
-    log.info("applying local parameters:")
-    log.info(parameter_blob)
-    for query in parameter_blob:
-        for param in arg_parameters:
-            if query['name'] == param['name']:
-                try:
-                    tmp_query = query['value'].replace(
-                            f"{{{param['name']}}}",
-                            param['value'])
-                    tmp_parameters.append({'name': param['name'],
-                                            'value': f"{tmp_query}"})
-                except TypeError:
-                    log.error("TypeError - did not replace [%s]", query['name'])
-                    continue
-    return tmp_parameters
-
-
-def _apply_values_to_queries(queries, values):
-    query_arr = []
-    for query_blob in queries:
-        query = _generate_query_with_parameters(query_blob, values)
-        query_arr.append({'name': query_blob['name'], 'value': query})
-    return query_arr
-
-
-def _apply_values_to_parameters(parameters, config_values):
-    parameter_arr = []
-    log.info("_apply_values_to_parameters")
-    for param_blob in parameters:
-        query = _generate_query_with_parameters(param_blob, config_values)
-        parameter_arr.append({'name': param_blob['name'], 'value': query})
-    return parameter_arr
-
-
-def _get_config_value(config_file, name):
-    for cfg in config_file['config']:
-        if cfg['name'] == name:
-            return cfg['value']
-    return ""
-
-
-def _query_athena(config_file, query_blob):
-    query = query_blob['value']
-    try:
-        athena_client = boto3.client('athena')
-
-    except botocore.exceptions.NoRegionError:
-        print("no region set!")
-        sys.exit(1)
-
-    default_database = _get_config_value(config_file, 'default_database')
-    s3_bucket = _get_config_value(config_file, 's3_bucket')
-
-    try:
-        query_execution = athena_client.start_query_execution(
-            QueryExecutionContext={
-                'Database': default_database
-            },
-            QueryString=query,
-            ResultConfiguration={
-                'OutputLocation': s3_bucket
+    options = {
+            's3_bucket': s3_bucket,
+            'database': database,
+            'query': query,
             }
-        )
-    except botocore.exceptions.UnauthorizedSSOTokenError:
-        print("not authenticated, login using 'aws sso login'")
-        sys.exit(1)
 
-    # Get the execution ID of your query
-    execution_id = query_execution['QueryExecutionId']
-
-    # Wait for the query to finish executing
-    results = None
-    query_status = None
-    while query_status not in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
-        response = athena_client.get_query_execution(QueryExecutionId=execution_id)
-        query_status = response['QueryExecution']['Status']['State']
-        if query_status == 'FAILED':
-            print("Query Failed!")
-            print(response)
-            sys.exit(1)
-        elif query_status == 'CANCELLED':
-            print("Query Cancelled!")
-            print(response)
-            sys.exit(1)
-
-    # Once the query has finished, you can get the results
-    if query_status == 'SUCCEEDED':
-        results = athena_client.get_query_results(QueryExecutionId=execution_id)
-    return results
+    run_query(config, args, **options)
 
 
-def _show_stored_queries(config_file, show_queries):
-    print("")
-    for query_blob in config_file['queries']:
-        query = ""
-        if show_queries:
-            query = query_blob['value']
-        print(f"\t{query_blob['name']:30}{query}\n")
+def run_query(config, args, **options):
+    """run_query - loads athena class to execute query using s3_bucket"""
+    athena = Athena()
+    sql_builder = SqlBuilder()
 
+    s3_bucket = options['s3_bucket']
+    database = options['database']
+    query = options['query']
 
-def _extract_row_data(result):
-    rows = result['ResultSet']['Rows']
-    row_data = []
-    for row in rows[1:]:  # Skip the first row as it contains column names
-        row_values = []
-        for value in row['Data']:
-            if 'VarCharValue' in value:
-                row_values.append(value['VarCharValue'])
-            else:
-                row_values.append(None)  # or any default value you want to use for blank columns
-        row_data.append(row_values)
-    return row_data
+    if args.list_databases:
+        log.info("listing databases")
+        athena.list_databases()
+
+    log.info("")
+    log.info("query object [%s]", query)
+
+    # Build a list of statements before applying them to the query
+
+    if 'operators' in query:
+        log.info("loading operators from file")
+        for operator in query['operators']:
+            if isinstance(operator['value'], list):
+                value = operator['value']
+            elif isinstance(operator['value'], str):
+                value = [operator['value']]
+            sql_builder.add_statements(
+                    [{'name': operator['name'], 'value': value}], False)
+
+    # AND statements, append or override?
+    if args.add_and_statements:
+        sql_builder.generate_query_operators('and',
+                args.add_and_statements)
+    if args.and_statements:
+        # override exising and statements from config file
+        sql_builder.generate_query_operators('and',
+                args.and_statements, override=True)
+
+    # OR statements, append or override?
+    if args.add_or_statements:
+        sql_builder.generate_query_operators('or',
+                args.add_or_statements)
+    if args.or_statements:
+        # override exising and statements from config file
+        sql_builder.generate_query_operators('or',
+                args.or_statements, override=True)
+
+    if args.group_by:
+        sql_builder.add_statements(
+                [{'name': 'group_by', 'value':
+                    f"GROUP BY {args.group_by}"}], override=True)
+    if args.order_by:
+        sql_builder.add_statements(
+                [{'name': 'order_by', 'value':
+                    f"ORDER BY {args.order_by}"}], override=True)
+    if args.limit:
+        sql_builder.add_statements(
+                [{'name': 'limit', 'value':
+                    f" LIMIT {args.limit}"}], override=True)
+
+    log.info("")
+    log.info("final outputs:")
+    log.info("params [%s]", config.get_params())
+    log.info("sql statements [%s]", sql_builder.get_statements())
+    sql_builder.add_statements_dict(config.get_params())
+    query = sql_builder.update_sql_statement(query)
+    query = sql_builder.remove_unused_parameters(query)
+    log.info(query['value'])
+
+    response = athena.query(s3_bucket, database, query)
+    athena.print_results(config, response, args.csv_mode)
 
 
 def main():
@@ -330,35 +171,42 @@ def main():
     log.getLogger().setLevel(log.CRITICAL)
     parser = argparse.ArgumentParser(description=__doc__.format(me=sys.argv[0]),
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+
+    parser.add_argument('--list-databases', action='store_true', help='List Athena databases')
     parser.add_argument('-v', '--verbose', dest='verbose', nargs='?',
                         const='arg_was_not_given', help='Show logging output')
-    parser.add_argument('-L', '--limit', dest='limit', default='10', nargs='?',
-                        const='arg_was_not_given', help='limit')
-    parser.add_argument('-y', '--year', dest='year',
-                        default=str(datetime.date.today().year), nargs='?',
-                        const='arg_was_not_given', help='year')
-    parser.add_argument('-m', '--month', dest='month', nargs='?',
-                        const='arg_was_not_given', help='month')
-    parser.add_argument('-c', '--csv', dest='csv', nargs='?',
+
+    parser.add_argument('-c', '--csv', dest='csv_mode', nargs='?',
                         const='arg_was_not_given', help='Generate comma seperated.')
-    parser.add_argument('-q', '--query_names', dest='query_names', nargs='?',
-                        const='arg_was_not_given', help='Query names seperated by comma.')
-    parser.add_argument('-a', '--and', dest='and_statements', nargs='+',
-                        help='Additional and statements')
-    parser.add_argument('-o', '--or', dest='or_statements', nargs='+',
-                        help='Additional or statements')
-    parser.add_argument('-l', '--like', dest='like_statements', nargs='+',
-                        help='Additional like statements')
-    parser.add_argument('-p', '--show', dest='show_query_names',
-                        action='store_true', help='Show stored statement names.')
-    parser.add_argument('-P', '--show-queries', dest='show_queries',
-                        action='store_true', help='Show stored queries.')
-    parser.add_argument('-S', '--select', dest='select', nargs='?',
-                        help='Additional select statements.')
-    parser.add_argument('-G', '--group-by', dest='group_by', nargs='?',
-                        const='arg_was_not_given', help='Additional GROUP BY statements.')
-    parser.add_argument('-O', '--order-by', dest='order_by', nargs='?',
-                        const='arg_was_not_given', help='Additional ORDER BY statements.')
+
+    parser.add_argument('-Q', '--query', default=None, dest='query',
+            help='Execute manual query...i.e; "select * from table limit 1;"')
+    parser.add_argument('-q', '--query_name', dest='query_name', nargs='?',
+                        const='arg_was_not_given', help='Query name.')
+    parser.add_argument('-d', '--database', dest='database', nargs='?',
+            const='arg_was_not_given', help='Use database <database_name>')
+    parser.add_argument('-p', '--params', dest='params', nargs='+',
+            help='Parameters; i.e. -v value1=your value2=values environment=test')
+
+    parser.add_argument('-s', '--select', dest='select', nargs='?',
+            help='Additional select statements.')
+
+    parser.add_argument('-a', '--and', dest='add_and_statements', nargs='+',
+            help='Additional AND statements')
+    parser.add_argument('-A', '--AND', dest='and_statements', nargs='+',
+            help='Additional AND statements')
+    parser.add_argument('-o', '--or', dest='add_or_statements', nargs='+',
+            help='Additional OR statements')
+    parser.add_argument('-O', '--OR', dest='or_statements', nargs='+',
+            help='Additional OR statements')
+
+    parser.add_argument('-g', '--group-by', dest='group_by', nargs='?',
+            const='arg_was_not_given', help='Additional GROUP BY statements.')
+    parser.add_argument('-b', '--order-by', dest='order_by', nargs='?',
+            const='arg_was_not_given', help='Additional ORDER BY statements.')
+
+    parser.add_argument('-l', '--limit', dest='limit', nargs='?',
+            const='arg_was_not_given', help='LIMIT <value>; e.g. -l 10')
 
     args = parser.parse_args()
     if args.verbose:
@@ -367,79 +215,9 @@ def main():
         log.getLogger().setLevel(log.INFO)
         log.getLogger('athena').info("verbose logging enabled")
 
-    arg_parameters = []
-    if args.limit:
-        arg_parameters.append({'name': 'limit', 'value': args.limit})
-    if args.year:
-        arg_parameters.append({'name': 'year', 'value': args.year})
-    if args.month:
-        arg_parameters.append({'name': 'month', 'value': args.month})
+    log.info('starting athena query tool')
 
-    config_file = _load_config_file()
-
-    if args.show_queries:
-        _show_stored_queries(config_file, args.show_queries)
-    else:
-        _run(config_file, arg_parameters, args)
-
-
-def _run(config_file, arg_parameters, args):
-    parameters = _apply_values_to_parameters(config_file['parameters'], config_file['values'])
-    parameters = _apply_local_parameters(arg_parameters, parameters)
-
-    # Append statements
-    parameters = _add_and_statements(parameters, args.and_statements)
-    parameters = _add_like_statements(parameters, args.like_statements)
-    parameters = _add_or_statements(parameters, args.or_statements)
-
-    # Update the queries with the parameters
-    queries = _get_queries(config_file, args.query_names)
-    queries = _apply_values_to_queries(queries, config_file['values'])
-    queries = _apply_parameters(parameters, queries)
-    queries = _add_additional_select(queries, args.select)
-
-    # Sorting:
-    queries = _add_additional_group_by(queries, args.select, args.group_by)
-    queries = _add_additional_order_by(queries, args.select, args.order_by)
-
-    # Remove any additional values from SQL statements
-    queries = _remove_unused_parameters(queries)
-
-    log.info("parameters:")
-    for param in parameters:
-        log.info(param)
-
-    log.info("queries:")
-    for query in queries:
-        log.info(query)
-
-    for query in queries:
-        results = _query_athena(config_file, query)
-        log.info(results)
-        if results:
-            if args.csv:
-                rows = _extract_row_data(results)
-
-                for row in rows:
-                    print(",".join([val for val in row]))
-            else:
-                headers = [col['Label'] for col in results['ResultSet']['ResultSetMetadata']['ColumnInfo']]
-                rows = _extract_row_data(results)
-
-                table = Table(title=query['name'])
-                row_styles = [Style(color="cyan"), Style(color="magenta"), Style(color="yellow")]
-
-                for column in headers:
-                    table.add_column(column)
-
-                for i, row in enumerate(rows):
-                    row_style = row_styles[i % len(row_styles)]
-                    table.add_row(*row, style=row_style)
-
-                console = Console()
-                console.print(table)
-
-            print("")
+    run_athena(args)
 
 
 if __name__ == '__main__':

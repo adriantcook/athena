@@ -1,58 +1,110 @@
 {
     "config": [
         {
-            "name": "default_database",
+            "name": "database",
             "value": "default"
         },
         {
             "name": "s3_bucket",
-            "value": "s3://my-athena-results-bucket/"
+            "value": "s3://{root_bucket}-{aws_account_id}-{region}/"
+        },
+        {
+            "colors": ["bright_red", "bright_yellow", "bright_blue"]
+        },
+        {
+            "profile": "engineering",
+            "region": "ap-southeast-2",
+            "values": [
+                {
+                    "s3_bucket": "s3://{my_environment_bucket}-{aws_account_id}-{region}/",
+                    "database": "{profile}_{environment}"
+                }
+            ]
         }
     ],
     "parameters": [
         {
+            "name": "environment",
+            "value": "test"
+        },
+        {
+            "name": "root_bucket",
+            "value": "my-root-bucket"
+        },
+        {
+            "name": "my_environment_bucket",
+            "value": "buckety-bucket"
+        },
+        {
+            "name": "cost_report_table",
+            "value": "mycostyreportytable"
+        },
+        {
             "name": "year",
-            "value": "and year = '{year}'"
+            "value": "2024"
         },
         {
             "name": "month",
-            "value": "and month = '{month}'"
-        },
-        {
-            "name": "limit",
-            "value": "limit {limit}"
-        }
-    ],
-    "values": [
-        {
-            "name": "cost_report_table",
-            "value": "cost_report"
-        },
-        {
-            "name": "aws_account_id",
-            "value": "0000111112223"
+            "value": "5"
         }
     ],
     "queries": [
         {
             "name": "default",
-            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month FROM {cost_report_table} WHERE 1 = 1 {year} {and} {or} {test} GROUP BY  year, month HAVING SUM(line_item_blended_cost) > 0 ORDER BY  cost DESC {limit};"
-        },
-        {
-            "name": "backup",
-            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month, line_item_usage_account_id, line_item_resource_id FROM {cost_report_table} WHERE 1 = 1 {year} {month} AND line_item_product_code = 'AmazonRDS' AND line_item_usage_type like '%Backup%' GROUP BY  year, month, line_item_usage_account_id, line_item_usage_type, line_item_product_code, line_item_resource_id HAVING SUM(line_item_blended_cost) > 0 ORDER BY  month, cost desc {limit};"
+            "value": ""
         },
         {
             "name": "service",
-            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month, line_item_product_code FROM {cost_report_table} WHERE 1 = 1 {year} {month} {and} {or} {like} GROUP BY year, month, line_item_product_code HAVING SUM(line_item_blended_cost) > 0 ORDER BY cost DESC, month DESC, line_item_product_code DESC {limit};"
+            "value": "SELECT {select} FROM {cost_report_table} WHERE 1 = 1 {and} GROUP BY year, month, line_item_usage_account_id, line_item_product_code HAVING sum(line_item_blended_cost) > 0 {order_by} {limit};",
+            "operators": [
+                {
+                    "name": "select",
+                    "value": "sum(line_item_blended_cost) AS cost, year, month, line_item_usage_account_id, line_item_product_code"
+                },
+                {
+                    "name": "and",
+                    "value": "AND year = '2024' AND month IN ('1', '2', '3', '4', '5') "
+                },
+                {
+                    "name": "limit",
+                    "value": "LIMIT 20"
+                },
+                {
+                    "name": "order_by",
+                    "value": "ORDER BY month DESC, cost DESC"
+                }
+            ]
         },
         {
-            "name": "account",
-            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, line_item_usage_account_id FROM {cost_report_table} WHERE 1 = 1 {year} {month} {and} {or} GROUP BY year, month, line_item_usage_account_id ORDER BY cost DESC, month DESC {limit};"
+            "name": "service-type",
+            "value": "SELECT sum(line_item_blended_cost) AS cost, month, line_item_usage_account_id, line_item_usage_type, line_item_resource_id FROM {cost_report_table} WHERE 1 = 1 {and} GROUP BY month, line_item_usage_account_id, line_item_usage_type, line_item_product_code, line_item_usage_type, line_item_resource_id HAVING sum(line_item_blended_cost) > 0 {order_by} {limit};",
+            "operators": [
+                {
+                    "name": "and",
+                    "value": "AND year = '2024' AND month IN ('1', '2', '3', '4', '5')"
+                },
+                {
+                    "name": "limit",
+                    "value": "LIMIT 20"
+                },
+                {
+                    "name": "order_by",
+                    "value": "ORDER BY month DESC, cost DESC"
+                }
+            ]
         },
         {
-            "name": "iops",
-            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, line_item_line_item_type, line_item_product_code, line_item_usage_type, line_item_usage_start_date as start_date {select} FROM {cost_report_table} WHERE 1 = 1 {year} {month} {like} and line_item_product_code = 'AmazonRDS' and line_item_usage_type = 'APS2-Aurora:StorageIOUsage' and line_item_usage_account_id = '{aws_account_id}' and line_item_line_item_type = 'Usage' GROUP BY year, month {group_by} ORDER BY cost DESC, hour desc, year DESC, month DESC, day DESC {order_by} {limit};"
+            "name": "backup",
+            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month, line_item_usage_account_id, line_item_resource_id FROM {cost_report_table} WHERE 1 = 1 AND line_item_product_code = 'AmazonRDS' AND line_item_usage_type like '%Backup%' AND year = '{year}' AND month = '{month}' {and} {like} GROUP BY  year, month, line_item_usage_account_id, line_item_usage_type, line_item_product_code, line_item_resource_id HAVING SUM(line_item_blended_cost) > 0 ORDER BY  month, cost desc {limit};"
+        },
+        {
+            "name": "elb",
+            "database": "sampledb",
+            "value": "select * from elb_logs where 1 = 1 {and} {or} {group_by} {order_by} {limit};"
+        },
+        {
+            "name": "total",
+            "value": "SELECT ROUND(SUM(line_item_blended_cost), 2) AS cost, year, month FROM {cost_report_table} WHERE 1 = 1 {year} {and} {or} GROUP BY year, month ORDER BY cost DESC, month DESC {limit};"
         }
     ]
-}    
+}

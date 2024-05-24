@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+from rich.console import Console
+from rich.table import Table
+from rich.style import Style
+
+# Named colors
+named_colors = [
+    "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+    "bright_black", "bright_red", "bright_green", "bright_yellow",
+    "bright_blue", "bright_magenta", "bright_cyan", "bright_white"
+]
+
+console = Console()
+
+# Create a table with named colors
+table_named_colors = Table(title="Named Colors", title_justify="center")
+table_named_colors.add_column("Color Name", justify="center")
+table_named_colors.add_column("Example", justify="center")
+
+for color in named_colors:
+    style = Style(color=color)
+    table_named_colors.add_row(color, f"[{color}]{color}[/{color}]", style=style)
+
+console.print(table_named_colors)
